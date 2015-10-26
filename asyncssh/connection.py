@@ -106,7 +106,7 @@ _DEFAULT_WINDOW = 2*1024*1024       # 2 MiB
 _DEFAULT_MAX_PKTSIZE = 32768        # 32 kiB
 
 
-def _load_private_key(key):
+def _load_private_key(key, passphrase=None):
     """Load a private key
 
        This function loads a private key and an optional certificate.
@@ -144,9 +144,9 @@ def _load_private_key(key):
         cert = None
 
     if isinstance(key, str):
-        key = read_private_key(key)
+        key = read_private_key(key, passphrase)
     elif isinstance(key, bytes):
-        key = import_private_key(key)
+        key = import_private_key(key, passphrase)
 
     if isinstance(cert, str):
         try:
@@ -183,7 +183,7 @@ def _load_public_key(key):
     return key
 
 
-def _load_private_key_list(keylist):
+def _load_private_key_list(keylist, passphrase=None):
     """Load list of private keys and optional associated certificates
 
        This function loads a collection of private keys, each with
@@ -200,10 +200,10 @@ def _load_private_key_list(keylist):
     """
 
     if isinstance(keylist, str):
-        keys = read_private_key_list(keylist)
+        keys = read_private_key_list(keylist, passphrase)
         return [(key, None) for key in keys]
     else:
-        return [_load_private_key(key) for key in keylist]
+        return [_load_private_key(key, passphrase) for key in keylist]
 
 def _load_public_key_list(keylist):
     """Load public key list
@@ -1691,9 +1691,9 @@ class SSHClientConnection(SSHConnection):
     """
 
     def __init__(self, client_factory, loop, host, port, known_hosts,
-                 username, client_keys, password, kex_algs, encryption_algs,
-                 mac_algs, compression_algs, rekey_bytes, rekey_seconds,
-                 auth_waiter):
+                 username, client_keys, password, passphrase, kex_algs,
+                 encryption_algs, mac_algs, compression_algs, rekey_bytes,
+                 rekey_seconds, auth_waiter):
         super().__init__(client_factory, loop, kex_algs, encryption_algs,
                          mac_algs, compression_algs, rekey_bytes,
                          rekey_seconds, server=False)
@@ -1710,8 +1710,10 @@ class SSHClientConnection(SSHConnection):
 
         self._username = saslprep(username)
 
+        self._passphrase = passphrase
+
         if client_keys:
-            self._client_keys = _load_private_key_list(client_keys)
+            self._client_keys = _load_private_key_list(client_keys, passphrase)
         else:
             self._client_keys = []
 
@@ -1719,7 +1721,7 @@ class SSHClientConnection(SSHConnection):
                 for file in _DEFAULT_KEY_FILES:
                     try:
                         file = os.path.join(os.environ['HOME'], '.ssh', file)
-                        self._client_keys.append(_load_private_key(file))
+                        self._client_keys.append(_load_private_key(file, passphrase))
                     except OSError:
                         pass
 
@@ -1867,7 +1869,7 @@ class SSHClientConnection(SSHConnection):
             if asyncio.iscoroutine(result):
                 result = yield from result
 
-            key, cert = _load_private_key(result)
+            key, cert = _load_private_key(result, self._passphrase)
 
         if cert:
             self._client_keys.insert(0, (key, None))
@@ -3935,8 +3937,8 @@ class SSHServer:
 def create_connection(client_factory, host, port=_DEFAULT_PORT, *,
                       loop=None, family=0, flags=0, local_addr=None,
                       known_hosts=(), username=None, client_keys=(),
-                      password=None, kex_algs=(), encryption_algs=(),
-                      mac_algs=(), compression_algs=(),
+                      password=None, passphrase=None, kex_algs=(),
+                      encryption_algs=(), mac_algs=(), compression_algs=(),
                       rekey_bytes=_DEFAULT_REKEY_BYTES,
                       rekey_seconds=_DEFAULT_REKEY_SECONDS):
     """Create an SSH client connection
@@ -4014,6 +4016,9 @@ def create_connection(client_factory, host, port=_DEFAULT_PORT, *,
            keyboard-interactive authentication which prompts for a password.
            If this is not specified, client password authentication will
            not be performed.
+       :param string passphrase: (optional)
+           The passphrase to use for SSH key. If this is not specified,
+           client passphrase to the SSH key will not be performed.
        :param kex_algs: (optional)
            A list of allowed key exchange algorithms in the SSH handshake,
            taken from :ref:`key exchange algorithms <KexAlgs>`
@@ -4053,9 +4058,9 @@ def create_connection(client_factory, host, port=_DEFAULT_PORT, *,
 
         return SSHClientConnection(client_factory, loop, host, port,
                                    known_hosts, username, client_keys,
-                                   password, kex_algs, encryption_algs,
-                                   mac_algs, compression_algs, rekey_bytes,
-                                   rekey_seconds, auth_waiter)
+                                   password, passphrase, kex_algs,
+                                   encryption_algs, mac_algs, compression_algs,
+                                   rekey_bytes, rekey_seconds, auth_waiter)
 
     if not client_factory:
         client_factory = SSHClient
