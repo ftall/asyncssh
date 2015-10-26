@@ -215,9 +215,13 @@ class SSHStreamSession:
     def _block_read(self, datatype):
         """Wait for more data to arrive on the stream"""
 
-        if self._read_waiter[datatype]:
-            raise RuntimeError('read called while another coroutine is '
-                               'already waiting to read')
+        old_waiter = self._read_waiter[datatype]
+        if old_waiter:
+            if old_waiter.cancelled():
+                self._unblock_read(datatype)
+            else:
+                raise RuntimeError('read called while another coroutine is '
+                                   'already waiting to read')
 
         waiter = asyncio.Future(loop=self._loop)
         self._read_waiter[datatype] = waiter
